@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ASCII Lyrics v6</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden}
+  body{display:flex;align-items:center;justify-content:center}
+  canvas{max-width:100vw;max-height:100vh;width:auto;height:auto;aspect-ratio:16/9}
+  #hint{position:fixed;bottom:20px;left:0;right:0;text-align:center;color:#555;font:13px system-ui,sans-serif}
+  #hint[hidden]{display:none}
+</style>
+</head>
+<body>
+<canvas id="out" width="960" height="540"></canvas>
+<canvas id="src" width="160" height="90" hidden></canvas>
+<audio id="a" src="lagu.mp3" preload="auto" loop></audio>
+<div id="hint" hidden>klik untuk mulai</div>
+<script src="lirik.js"></script>
+<script>
+// ===== PENGATURAN WAKTU =====
+// MAJUKAN       : geser SEMUA lirik lebih awal (detik). Terlambat -> naikkan (mis. 0.2). Terlalu cepat -> turunkan / minus.
+// MAJUKAN_AWAL  : tambahan geser khusus bagian awal lagu (sebelum detik 14).
+const MAJUKAN = 0.1;
+const MAJUKAN_AWAL = 0.1;
+
+// Jadwal tiap baris lirik (urut sesuai baris di lirik.js), dalam detik.
+//  s, e = baris mulai & hilang.  c = potongan kata [mulai, jumlahKata, (akhir opsional)].
+const JADWAL = [
+  {s: 0.30,  e: 1.95,  c: [[0.30,3]]},
+  {s: 2.16,  e: 4.8,  c: [[2.16,3],[2.98,3],[3.66,3],[4.70,1]]},
+  {s: 5.0,  e: 8.8,  c: [[5.15,3],[6.04,2],[6.67,2],[7.49,4],[8.80,1]]},
+  {s: 8.9,  e: 11.2,  c: [[9.22,3],[10.04,1],[10.29,1]]},
+  {s: 11.30, e: 13.7,  c: [[11.30,2],[12.14,2],[12.86,3],[13.46,1]]},
+  {s: 13.75, e: 17.25, c: [[13.75,3],[14.75,4],[15.75,1]]},
+  {s: 17.25, e: 20.5,  c: [[17.25,3],[18.0,4],[19.25,1]]},
+  {s: 20.75, e: 23.75, c: [[20.75,3],[21.75,3],[22.75,4]]},
+  {s: 24.25, e: 27.5,  c: [[24.25,3],[25.25,4],[26.5,2]]},
+  {s: 27.5,  e: 30.5,  c: [[27.5,4],[28.75,4]]},
+  {s: 30.5,  e: 34.25, c: [[30.5,1],[31.75,2],[32.5,3]]},
+  {s: 34.25, e: 37.25, c: [[34.25,3],[35.0,2],[35.75,3]]},
+  {s: 37.75, e: 40.5,  c: [[37.75,4],[39.0,5]]},
+  {s: 40.6, e: 48.0,  c: [[41.25,3],[42.75,3],[44.25,2,45.25],[46.0,1]]}
+];
+
+// Waktu kemunculan suara (suku kata) di lagu, dihitung dari audio.
+// Awal tiap potongan otomatis "ditempelkan" ke suara terdekat (maks. 0.2 detik) agar pas.
+const ONSETS = [0.07, 0.21, 0.46, 0.65, 0.86, 1.06, 1.27, 1.51, 1.71, 1.93, 2.16, 2.36, 2.59, 2.74, 2.98, 3.15, 3.3, 3.43, 3.66, 3.88, 4.06, 4.32, 4.7, 4.97, 5.15, 5.4, 5.62, 5.78, 6.04, 6.4, 6.67, 6.86, 7.08, 7.29, 7.49, 7.74, 7.88, 8.11, 8.36, 8.58, 8.8, 9.02, 9.22, 9.46, 9.62, 9.84, 10.04, 10.29, 10.5, 10.7, 10.93, 11.14, 11.3, 11.55, 11.78, 12.0, 12.14, 12.43, 12.66, 12.86, 13.32, 13.46, 13.64, 13.83, 14.13, 14.41, 14.61, 14.74, 14.98, 15.4, 15.83, 16.11, 16.28, 16.49, 16.7, 16.95, 17.12, 17.24, 17.39, 17.55, 17.81, 17.98, 18.4, 18.85, 19.12, 19.26, 19.54, 19.7, 19.97, 20.11, 20.38, 20.54, 20.8, 20.99, 21.13, 21.27, 21.39, 21.65, 21.82, 22.05, 22.27, 22.52, 22.69, 22.82, 23.11, 23.55, 23.73, 23.97, 24.27, 24.41, 24.85, 25.1, 25.25, 25.52, 25.7, 25.87, 26.12, 26.54, 26.98, 27.14, 27.41, 27.64, 27.84, 28.1, 28.26, 28.5, 28.69, 28.91, 29.12, 29.57, 29.97, 30.41, 30.65, 30.82, 31.0, 31.14, 31.32, 31.53, 31.7, 31.95, 32.11, 32.37, 32.55, 32.99, 33.22, 33.39, 33.82, 34.1, 34.26, 34.51, 34.78, 34.95, 35.11, 35.28, 35.41, 35.55, 35.81, 35.99, 36.42, 36.62, 36.83, 37.14, 37.26, 37.5, 37.68, 37.94, 38.13, 38.29, 38.62, 38.85, 38.97, 39.26, 39.42, 39.58, 39.84, 40.33, 40.53, 40.68, 41.06, 41.34, 41.46, 41.77, 42.02, 42.23, 42.41, 42.77, 42.97, 43.11, 43.29, 43.49, 43.66, 43.93, 44.12, 44.26, 44.38, 44.58, 44.87, 45.0, 45.13, 45.43, 45.64, 45.84, 46.15, 46.3, 46.53, 46.66, 46.91, 47.14, 47.55, 47.68, 47.88, 48.02, 48.44, 48.61, 48.84, 49.05, 49.26, 49.53, 49.73, 49.86];
+const SNAP = 0.2;
+function snap(t){
+  let best = t, d = SNAP + 1e-9;
+  for (const o of ONSETS){ const dd = Math.abs(o - t); if (dd < d){ d = dd; best = o; } }
+  return best;
+}
+
+const a = document.getElementById('a');
+const src = document.getElementById('src'), sctx = src.getContext('2d', {willReadFrequently:true});
+const out = document.getElementById('out'), octx = out.getContext('2d');
+const RAMP = " .:-=+*#%@", CELL = 6;
+const COLORS = {kuning:'#ffd84a', putih:'#f2f2f2', hijau:'#8fe3a0'};
+
+const COLOR_CYCLE = [COLORS.kuning, COLORS.putih, COLORS.hijau];
+const texts = (typeof LIRIK === 'string' ? LIRIK : '').split('\n').map(l => l.trim()).filter(Boolean);
+
+// Tiap baris dipecah jadi potongan pendek (seperti di video asli) dan waktunya
+// dibagi sebanding panjang potongan di dalam jadwal baris itu.
+function chunk(text){
+  const words = text.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)), out = []; let cur = '';
+  for (const w of words){
+    if (cur && (cur + ' ' + w).length > 15){ out.push(cur); cur = w; } else cur = cur ? cur + ' ' + w : w;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+const lines = [];
+texts.forEach((raw, i) => {
+  const j = JADWAL[i]; if (!j) return;
+  const words = raw.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)), color = COLOR_CYCLE[i % 3];
+  if (j.c){
+    let pos = 0;
+    j.c.forEach(([t0, n, endOpt], k) => {
+      const last = k === j.c.length - 1, t = snap(t0);
+      const part = words.slice(pos, last ? words.length : pos + n).join(' '); pos += n;
+      const end = endOpt !== undefined ? endOpt : (last ? j.e : snap(j.c[k+1][0]));
+      if (part) lines.push({t, end, text:part, color});
+    });
+  } else {
+    const parts = chunk(raw), wt = p => Math.max(1, (p.toLowerCase().match(/[aeiouy]+/g) || []).length), total = parts.reduce((s,p) => s + wt(p), 0); let t = j.s;
+    parts.forEach(p => { const d = (j.e - j.s) * wt(p) / total; lines.push({t, end:t + d, text:p, color}); t += d; });
+  }
+});
+
+function current(t){ for (const l of lines) if (t >= l.t && t < l.end) return l; return null; }
+function wrap(text){
+  const w = text.split(' ');
+  if (text.length <= 14 || w.length < 2) return [text];
+  let best = 1, diff = 1e9;
+  for (let i=1;i<w.length;i++){
+    const d = Math.abs(w.slice(0,i).join(' ').length - w.slice(i).join(' ').length);
+    if (d < diff){ diff = d; best = i; }
+  }
+  return [w.slice(0,best).join(' '), w.slice(best).join(' ')];
+}
+function drawSource(line){
+  sctx.fillStyle = '#000'; sctx.fillRect(0,0,src.width,src.height);
+  if (!line || !line.text) return;
+  const parts = wrap(line.text), size = parts.length === 1 ? 26 : 22;
+  sctx.font = `800 ${size}px Arial Black, Arial, sans-serif`;
+  sctx.textAlign = 'center'; sctx.textBaseline = 'middle'; sctx.fillStyle = line.color;
+  const maxW = Math.max(...parts.map(p => sctx.measureText(p).width));
+  if (maxW > src.width*0.94) sctx.font = `800 ${size*src.width*0.94/maxW}px Arial Black, Arial, sans-serif`;
+  const lh = size*1.15, y0 = src.height/2 - (parts.length-1)*lh/2;
+  parts.forEach((p,i) => sctx.fillText(p, src.width/2, y0 + i*lh));
+}
+// Semua potongan digambar lebih dulu ke kanvas tersembunyi, jadi saat lagu berjalan
+// layar cukup menempel gambar jadi (tanpa jeda hitung).
+function buildImage(line){
+  drawSource(line);
+  const {data} = sctx.getImageData(0,0,src.width,src.height);
+  const c = document.createElement('canvas'); c.width = out.width; c.height = out.height;
+  const x2 = c.getContext('2d');
+  x2.font = `bold ${CELL+1}px ui-monospace, Menlo, monospace`; x2.textBaseline = 'top';
+  for (let y=0;y<src.height;y++) for (let x=0;x<src.width;x++){
+    const i = (y*src.width+x)*4, r = data[i], g = data[i+1], b = data[i+2];
+    const br = Math.max(r,g,b)/255; if (br < 0.08) continue;
+    x2.fillStyle = `rgb(${r},${g},${b})`;
+    x2.fillText(RAMP[Math.min(RAMP.length-1, Math.floor(br*RAMP.length))], x*CELL, y*CELL);
+  }
+  return c;
+}
+lines.forEach(l => l.img = buildImage(l));
+
+let last = undefined;
+function render(){
+  const t = a.currentTime, line = current(t + MAJUKAN + (t < 14 ? MAJUKAN_AWAL : 0));
+  if (line !== last){
+    last = line;
+    octx.fillStyle = '#000'; octx.fillRect(0,0,out.width,out.height);
+    if (line) octx.drawImage(line.img, 0, 0);
+  }
+  requestAnimationFrame(render);
+}
+render();
+
+// mulai otomatis (setelah semua gambar siap); jika diblokir browser, klik/ketuk pertama memulai
+const hint = document.getElementById('hint');
+const events = ['pointerdown','keydown','touchstart'];
+function go(){ a.play().then(() => { hint.hidden = true; events.forEach(t => removeEventListener(t, go)); }).catch(()=>{}); }
+a.currentTime = 0;
+a.play().catch(() => { hint.hidden = false; events.forEach(t => addEventListener(t, go)); });
+</script>
+</body>
+</html>
